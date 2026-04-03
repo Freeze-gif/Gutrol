@@ -19,10 +19,97 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
 
   int _currentStepIndex = 0;
 
+  bool _hasShownCompletionPopup = false;
+
   @override
   void initState() {
     super.initState();
     _updateStepIndex();
+    _checkCompletionStatus();
+  }
+
+  void _checkCompletionStatus() {
+    if (AppState.liveStatus.toLowerCase().contains('completed') && 
+        AppState.progress >= 100 && 
+        !_hasShownCompletionPopup) {
+      _hasShownCompletionPopup = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showCompletionPopup();
+      });
+    }
+  }
+
+  void _showCompletionPopup() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.check_circle,
+                  color: Colors.green.shade600,
+                  size: 50,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Fueling Completed!',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Your fueling process has been completed successfully. Thank you for using our service!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade600,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text(
+                    'GOT IT',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _updateStepIndex() {
@@ -41,6 +128,15 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
         AppState.liveStatus = _statusSteps[_currentStepIndex]['status'];
         AppState.progress = _statusSteps[_currentStepIndex]['progress'];
       });
+      
+      // Check if completed and show popup
+      if (AppState.liveStatus.toLowerCase().contains('completed') && 
+          !_hasShownCompletionPopup) {
+        _hasShownCompletionPopup = true;
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _showCompletionPopup();
+        });
+      }
     }
   }
 
@@ -147,25 +243,16 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
                         color: Colors.blue.shade800,
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Auto-controlled by ESP32',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: _simulateNextStep,
-                icon: const Icon(Icons.skip_next),
-                label: const Text('SIMULATE NEXT STEP'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 2,
                 ),
               ),
             ),

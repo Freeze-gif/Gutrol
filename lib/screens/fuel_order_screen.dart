@@ -12,15 +12,20 @@ class FuelOrderScreen extends StatefulWidget {
 class _FuelOrderScreenState extends State<FuelOrderScreen> {
   String _selectedFuelType = 'Petrol 92';
   String _selectedMode = 'Auto Filling';
+  final _litersController = TextEditingController();
   final _amountController = TextEditingController();
   bool _isLoading = false;
+  bool _isCalculating = false;
+
+  // Price per liter in MMK (adjust as needed)
+  final double _pricePerLiter = 2200.0;
 
   final List<String> _fuelTypes = ['Petrol 92', 'Petrol 95', 'Diesel'];
   final List<String> _modes = ['Auto Filling', 'Manual Filling'];
 
   Future<void> _submitOrder() async {
-    if (_amountController.text.isEmpty) {
-      _showError('Please enter amount or liters');
+    if (_litersController.text.isEmpty && _amountController.text.isEmpty) {
+      _showError('Please enter liters or amount');
       return;
     }
 
@@ -30,14 +35,14 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
 
     AppState.selectedFuelType = _selectedFuelType;
     AppState.selectedMode = _selectedMode;
-    AppState.selectedAmount = _amountController.text;
+    AppState.selectedAmount = '${_litersController.text} Liters / ${_amountController.text} MMK';
     AppState.liveStatus = 'Request Submitted';
     AppState.progress = 0.0;
 
     final order = {
       'fuelType': _selectedFuelType,
       'mode': _selectedMode,
-      'amount': _amountController.text,
+      'amount': '${_litersController.text} Liters / ${_amountController.text} MMK',
       'date': DateTime.now().toString(),
       'status': 'Pending',
     };
@@ -59,6 +64,40 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  void _onLitersChanged(String value) {
+    if (_isCalculating) return;
+    
+    if (value.isNotEmpty) {
+      final liters = double.tryParse(value) ?? 0;
+      final amount = liters * _pricePerLiter;
+      
+      setState(() {
+        _isCalculating = true;
+        _amountController.text = amount.toStringAsFixed(0);
+        _isCalculating = false;
+      });
+    } else {
+      _amountController.clear();
+    }
+  }
+
+  void _onAmountChanged(String value) {
+    if (_isCalculating) return;
+    
+    if (value.isNotEmpty) {
+      final amount = double.tryParse(value) ?? 0;
+      final liters = amount / _pricePerLiter;
+      
+      setState(() {
+        _isCalculating = true;
+        _litersController.text = liters.toStringAsFixed(2);
+        _isCalculating = false;
+      });
+    } else {
+      _litersController.clear();
+    }
   }
 
   @override
@@ -150,30 +189,96 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text(
-                  'Amount / Liters',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.blue.shade800,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Liters',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _litersController,
+                            keyboardType: TextInputType.number,
+                            onChanged: _onLitersChanged,
+                            decoration: InputDecoration(
+                              hintText: 'e.g., 20',
+                              suffixText: 'L',
+                              prefixIcon: const Icon(Icons.local_gas_station),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Colors.blue.shade400,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(
+                      Icons.sync_alt,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Amount (MMK)',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _amountController,
+                            keyboardType: TextInputType.number,
+                            onChanged: _onAmountChanged,
+                            decoration: InputDecoration(
+                              hintText: 'e.g., 44000',
+                              suffixText: 'Ks',
+                              prefixIcon: const Icon(Icons.attach_money),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Colors.blue.shade400,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _amountController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: 'e.g., 20 Liters or 5000 MMK',
-                    prefixIcon: const Icon(Icons.attach_money),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.blue.shade400,
-                        width: 2,
-                      ),
+                Center(
+                  child: Text(
+                    'Rate: ${_pricePerLiter.toStringAsFixed(0)} MMK/Liter',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade500,
+                      fontStyle: FontStyle.italic,
                     ),
                   ),
                 ),
@@ -212,6 +317,7 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
 
   @override
   void dispose() {
+    _litersController.dispose();
     _amountController.dispose();
     super.dispose();
   }
