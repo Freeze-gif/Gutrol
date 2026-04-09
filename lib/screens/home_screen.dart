@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/app_state.dart';
 import '../services/auth_service.dart';
+import '../services/esp32_service.dart';
 import 'fuel_order_screen.dart';
 import 'live_status_screen.dart';
 import 'history_screen.dart';
@@ -15,10 +16,53 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _ipController = TextEditingController();
+  bool _isConnecting = false;
+  String _connectionStatus = '';
+
   @override
   void initState() {
     super.initState();
     AppState.init();
+    
+    // Load saved IP if exists
+    if (AppState.hasEsp32Ip) {
+      _ipController.text = AppState.esp32IpAddress;
+      Esp32Service.setIpAddress(AppState.esp32IpAddress);
+      _testConnection();
+    }
+  }
+
+  Future<void> _testConnection() async {
+    setState(() {
+      _isConnecting = true;
+      _connectionStatus = 'Connecting...';
+    });
+
+    final isConnected = await Esp32Service.testConnection();
+
+    setState(() {
+      _isConnecting = false;
+      AppState.isEsp32Connected = isConnected;
+      _connectionStatus = isConnected ? 'Connected ✓' : 'Connection Failed ✗';
+    });
+  }
+
+  Future<void> _connectToEsp32() async {
+    final ip = _ipController.text.trim();
+    
+    if (!Esp32Service.isValidIp(ip)) {
+      setState(() {
+        _connectionStatus = 'Invalid IP Address';
+      });
+      return;
+    }
+
+    // Save IP
+    AppState.setEsp32Ip(ip);
+    Esp32Service.setIpAddress(ip);
+
+    await _testConnection();
   }
 
   Future<void> _logout() async {
@@ -122,6 +166,118 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              
+              // ESP32 Connection Card
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.wifi_tethering,
+                            color: Colors.blue.shade700,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'ESP32 Connection',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _ipController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: 'ESP32 IP Address',
+                                hintText: 'e.g., 192.168.1.50',
+                                prefixIcon: const Icon(Icons.router),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: Colors.blue.shade400,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          SizedBox(
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: _isConnecting ? null : _connectToEsp32,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade700,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isConnecting
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Connect'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_connectionStatus.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              AppState.isEsp32Connected
+                                  ? Icons.check_circle
+                                  : Icons.error,
+                              color: AppState.isEsp32Connected
+                                  ? Colors.green
+                                  : Colors.red,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _connectionStatus,
+                              style: TextStyle(
+                                color: AppState.isEsp32Connected
+                                    ? Colors.green
+                                    : Colors.red,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Quick Actions
               Text(
                 'Quick Actions',
                 style: TextStyle(
@@ -211,5 +367,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    super.dispose();
   }
 }

@@ -46,13 +46,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final result = await AuthService.register(
       _emailController.text.trim(),
       _passwordController.text.trim(),
+      name: _nameController.text.trim(),
+      licensePlate: _licensePlateController.text.trim().toUpperCase(),
     );
 
     setState(() => _isLoading = false);
 
     if (result['success']) {
-      AppState.customerName = _nameController.text.trim();
-      AppState.licensePlate = _licensePlateController.text.trim().toUpperCase();
       _showSuccess('Registration successful!');
       Navigator.pushReplacement(
         context,

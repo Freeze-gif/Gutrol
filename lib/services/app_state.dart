@@ -7,6 +7,10 @@ class AppState {
   static String liveStatus = 'Request Submitted';
   static double progress = 0.0;
   static List<Map<String, dynamic>> history = [];
+  
+  // ESP32 Connection Settings
+  static String esp32IpAddress = '';
+  static bool isEsp32Connected = false;
 
   static void init() {
     history = [
@@ -42,9 +46,19 @@ class AppState {
     selectedAmount = '';
     liveStatus = 'Request Submitted';
     progress = 0.0;
+    // Note: We don't clear ESP32 IP to persist it across sessions
+    isEsp32Connected = false;
   }
 
   static void addToHistory(Map<String, dynamic> order) {
     history.insert(0, order);
   }
+  
+  /// Set ESP32 IP address
+  static void setEsp32Ip(String ip) {
+    esp32IpAddress = ip;
+  }
+  
+  /// Check if ESP32 is configured
+  static bool get hasEsp32Ip => esp32IpAddress.isNotEmpty;
 }
