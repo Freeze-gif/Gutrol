@@ -25,14 +25,17 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
   @override
   void initState() {
     super.initState();
-    if (!Esp32Service.isConfigured && AppState.hasEsp32Ip) {
+    // Keep the service pointed at the configured address.
+    if (AppState.hasEsp32Ip) {
       Esp32Service.setIpAddress(AppState.esp32IpAddress);
     }
   }
 
   Future<void> _submitOrder() async {
     if (!Esp32Service.isConfigured) {
-      _showError('ESP32 not configured. Please set IP in Dashboard.');
+      _showError(
+        'Pump controller address not set. Open Live Status and set the ESP32 IP.',
+      );
       return;
     }
 

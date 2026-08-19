@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/pump_status.dart';
+import 'app_state.dart';
 
 /// ESP32 HTTP Service
 /// Handles all communication with ESP32 fuel pump controller
 class Esp32Service {
-  // Base URL - ESP32 IP address (can be configured via AppState)
-  static String baseUrl = 'http://10.247.47.79';
+  /// Base URL of the pump controller. Derived from [AppState.esp32IpAddress]
+  /// so there is a single source of truth for the address - the screens and
+  /// the service can never disagree about which ESP32 they are talking to.
+  static String get baseUrl => 'http://${AppState.esp32IpAddress}';
   
   // HTTP client with timeout
   static final http.Client _client = http.Client();
@@ -18,7 +22,7 @@ class Esp32Service {
 
   /// Set the ESP32 IP address
   static void setIpAddress(String ip) {
-    baseUrl = 'http://$ip';
+    AppState.setEsp32Ip(ip.trim());
   }
 
   /// Validate IP address format
@@ -39,8 +43,8 @@ class Esp32Service {
     return true;
   }
 
-  /// Check if service is configured - always true since IP is hardcoded in backend
-  static bool get isConfigured => true;
+  /// Whether an ESP32 address has been configured.
+  static bool get isConfigured => AppState.esp32IpAddress.trim().isNotEmpty;
 
   /// Get full URL for endpoint
   static String _url(String endpoint) {
@@ -60,14 +64,14 @@ class Esp32Service {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         return PumpStatus.fromJson(json);
       } else {
-        print('[ESP32] Status error: ${response.statusCode}');
+        debugPrint('[ESP32] Status error: ${response.statusCode}');
         return null;
       }
     } on TimeoutException {
-      print('[ESP32] Status timeout');
+      debugPrint('[ESP32] Status timeout');
       return null;
     } catch (e) {
-      print('[ESP32] Status error: $e');
+      debugPrint('[ESP32] Status error: $e');
       return null;
     }
   }
@@ -138,28 +142,28 @@ class Esp32Service {
         return json;
       } else {
         final error = 'HTTP ${response.statusCode}';
-        print('[ESP32] POST error: $error');
+        debugPrint('[ESP32] POST error: $error');
         
         // Retry on server error
         if (response.statusCode >= 500 && retry < maxRetries) {
           await Future.delayed(Duration(milliseconds: 500 * (retry + 1)));
-          return _postRequest(endpoint, retry: retry + 1);
+          return await _postRequest(endpoint, retry: retry + 1);
         }
         
         return {'success': false, 'error': error};
       }
     } on TimeoutException {
-      print('[ESP32] POST timeout: $endpoint');
+      debugPrint('[ESP32] POST timeout: $endpoint');
       
       // Retry on timeout
       if (retry < maxRetries) {
         await Future.delayed(Duration(milliseconds: 500 * (retry + 1)));
-        return _postRequest(endpoint, retry: retry + 1);
+        return await _postRequest(endpoint, retry: retry + 1);
       }
       
       return {'success': false, 'error': 'Connection timeout'};
     } catch (e) {
-      print('[ESP32] POST error: $e');
+      debugPrint('[ESP32] POST error: $e');
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -171,11 +175,11 @@ class Esp32Service {
     try {
       final response = await _client
           .get(Uri.parse(_url('/status')))
-          .timeout(Duration(seconds: 3));
+          .timeout(const Duration(seconds: 3));
       
       return response.statusCode == 200;
     } catch (e) {
-      print('[ESP32] Connection test failed: $e');
+      debugPrint('[ESP32] Connection test failed: $e');
       return false;
     }
   }
