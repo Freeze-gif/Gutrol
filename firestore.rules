@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Security rules for the Gutrol customer app.
+//
+// Deploy with:  firebase deploy --only firestore:rules
+//
+// Without these deployed, a project in production mode rejects every read and
+// write, which shows up in the app as a wallet balance that is always 0 and an
+// empty order history.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Customer profile: name, license plate, email.
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Fuelling history for that customer.
+      match /orders/{orderId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Prepaid wallet: balance plus the embedded transaction list.
+    //
+    // NOTE: the app credits the wallet client-side, so these rules let a
+    // signed-in user set their own balance. That is fine for the prototype but
+    // must move to a Cloud Function (or a server-verified payment callback)
+    // before real money is involved.
+    match /wallets/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}

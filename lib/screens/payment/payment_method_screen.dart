@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/payment_service.dart';
 import '../../services/app_state.dart';
+import '../../services/wallet_service.dart';
 
 /// Payment Method Selection Screen
 class PaymentMethodScreen extends StatefulWidget {
@@ -48,9 +49,29 @@ class _PaymentMethodScreenState extends State<PaymentMethodScreen> {
         return;
       }
       
-      // Deduct from wallet
-      AppState.walletBalance -= widget.amountMMK;
-      
+      // Deduct from the wallet in Firestore. Only report success once the
+      // deduction has actually been stored, otherwise it is lost on re-login.
+      setState(() => _isLoading = true);
+      final saved = await WalletService.applyTransaction({
+        'id': 'PAY${DateTime.now().millisecondsSinceEpoch}',
+        'type': 'purchase',
+        'amount': widget.amountMMK,
+        'description': 'Fuel Payment - ${widget.fuelType}',
+        'timestamp': DateTime.now().toIso8601String(),
+        'status': 'Completed',
+      }, -widget.amountMMK);
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (!saved) {
+        setState(() {
+          _errorMessage = WalletService.lastError ??
+              'Payment failed. Your balance was not changed.';
+        });
+        return;
+      }
+
       // Show success and navigate to fueling
       _showWalletPaymentSuccess();
       return;

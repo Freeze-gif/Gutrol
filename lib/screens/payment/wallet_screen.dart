@@ -17,17 +17,29 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize mock top-up transactions if empty
-    if (AppState.walletTransactions.isEmpty) {
-      AppState.addWalletTransaction({
-        'id': '1',
-        'type': 'topup',
-        'amount': 50000.0,
-        'description': 'KBZPay Top-up',
-        'timestamp': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
-        'status': 'Completed',
-      });
+    // Always show what Firestore actually holds - the balance and the
+    // transaction list must come from the same place.
+    _refreshWallet();
+  }
+
+  Future<void> _refreshWallet() async {
+    final ok = await WalletService.loadWalletData();
+    if (!mounted) return;
+    setState(() {});
+    if (!ok) {
+      _showError(WalletService.lastError ?? 'Could not load your wallet');
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   // Only show top-up transactions in wallet history
@@ -91,7 +103,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 height: 55,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.pop(context);
+                    Navigator.pop(modalContext);
                     _processTopUp();
                   },
                   style: ElevatedButton.styleFrom(
@@ -151,58 +163,52 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  void _processTopUp() {
-    final amount = double.tryParse(_amountController.text) ?? 0;
+  Future<void> _processTopUp() async {
+    final amount = double.tryParse(_amountController.text.trim()) ?? 0;
     if (amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid amount')),
+      _showError('Please enter a valid amount');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    final transaction = {
+      'id': 'TXN${DateTime.now().millisecondsSinceEpoch}',
+      'type': 'topup',
+      'amount': amount,
+      'description': '$_selectedPaymentMethod Top-up',
+      'timestamp': DateTime.now().toIso8601String(),
+      'status': 'Completed',
+    };
+
+    // Firestore first: the balance is only credited locally once it has
+    // actually been stored, so a failed write can never look like a success.
+    final saved = await WalletService.applyTransaction(transaction, amount);
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (!saved) {
+      _showError(
+        WalletService.lastError ?? 'Top-up failed. Your balance was not changed.',
       );
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Quick payment processing
-    Future.delayed(const Duration(milliseconds: 500), () async {
-      if (mounted) {
-        final transaction = {
-          'id': 'TXN${DateTime.now().millisecondsSinceEpoch}',
-          'type': 'topup',
-          'amount': amount,
-          'description': '$_selectedPaymentMethod Top-up',
-          'timestamp': DateTime.now().toIso8601String(),
-          'status': 'Completed',
-        };
-        
-        setState(() {
-          AppState.walletBalance += amount;
-          _isLoading = false;
-          // Add transaction to AppState (persists across sessions)
-          AppState.addWalletTransaction(transaction);
-        });
-        
-        // Save to Firebase
-        await WalletService.addTransaction(transaction);
-        
-        _amountController.clear();
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Top-up of ${amount.toStringAsFixed(0)} MMK successful!'),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    });
+    _amountController.clear();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white),
+            const SizedBox(width: 12),
+            Text('Top-up of ${amount.toStringAsFixed(0)} MMK successful!'),
+          ],
+        ),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -254,10 +260,19 @@ class _WalletScreenState extends State<WalletScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showTopUpDialog,
-        backgroundColor: const Color(0xFFE53935),
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Top Up', style: TextStyle(color: Colors.white)),
+        onPressed: _isLoading ? null : _showTopUpDialog,
+        backgroundColor: _isLoading ? Colors.grey : const Color(0xFFE53935),
+        icon: _isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.add, color: Colors.white),
+        label: Text(
+          _isLoading ? 'Saving...' : 'Top Up',
+          style: const TextStyle(color: Colors.white),
+        ),
       ),
     );
   }

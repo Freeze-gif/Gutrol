@@ -67,10 +67,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadFirebaseData() async {
-    await WalletService.loadWalletData();
-    await WalletService.loadOrders();
-    if (mounted) {
-      setState(() {});
+    final walletOk = await WalletService.loadWalletData();
+    final ordersOk = await WalletService.loadOrders();
+    if (!mounted) return;
+    setState(() {});
+
+    // A silent failure here is what makes the balance look like it reset to
+    // zero, so say so instead of showing an empty wallet as if it were real.
+    if (!walletOk || !ordersOk) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            WalletService.lastError ??
+                'Could not load your wallet and history. Check your connection.',
+          ),
+          backgroundColor: Colors.orange.shade800,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -144,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _logout() async {
     final result = await AuthService.logout();
     if (result['success']) {
-      AppState.clear();
+      AppState.clearUserData();
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),

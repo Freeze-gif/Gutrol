@@ -18,10 +18,18 @@ class LiveStatusScreen extends StatefulWidget {
 class _LiveStatusScreenState extends State<LiveStatusScreen> {
   PumpStatus? _status;
   bool _isLoading = false;
-  bool _isConnecting = false;
   Timer? _refreshTimer;
   bool _hasCompleted = false; // Prevent double charging
-  
+
+  /// True until the very first status poll has come back, so the screen can
+  /// show a spinner instead of a blank page.
+  bool _isFirstLoad = true;
+
+  /// Consecutive failed polls. One dropped packet must not be mistaken for
+  /// "the pump stopped", which would end the session and charge the wallet.
+  int _consecutiveFailures = 0;
+  static const int _failureTolerance = 3;
+
   // For tracking duration
   DateTime? _pumpStartTime;
   Timer? _durationTimer;
@@ -30,11 +38,12 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
   @override
   void initState() {
     super.initState();
-    
-    if (!Esp32Service.isConfigured && AppState.hasEsp32Ip) {
+
+    // Keep the service pointed at the configured address.
+    if (AppState.hasEsp32Ip) {
       Esp32Service.setIpAddress(AppState.esp32IpAddress);
     }
-    
+
     _fetchStatus();
     _startAutoRefresh();
   }
@@ -111,9 +120,6 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
     // Stop refresh timer
     _refreshTimer?.cancel();
     
-    // Deduct from wallet only once
-    AppState.walletBalance -= dispensedMMK;
-    
     // Create fuel purchase transaction
     final fuelTransaction = {
       'id': 'FUEL${DateTime.now().millisecondsSinceEpoch}',
@@ -123,19 +129,29 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'Completed',
     };
-    
-    // Add to local state
-    AppState.addWalletTransaction(fuelTransaction);
-    
-    // Save to Firebase (balance + transaction)
-    await WalletService.addTransaction(fuelTransaction);
-    
+
+    // Deduct in Firestore and mirror the stored balance locally. Doing the
+    // deduction here (rather than on the local static) is what keeps the
+    // balance correct after signing out and back in.
+    final charged =
+        await WalletService.applyTransaction(fuelTransaction, -dispensedMMK);
+
     // Update order status in history (await to ensure Firebase update completes)
     await _updateOrderStatus(dispensedMMK);
-    
+
     // Clear pump start time to prevent re-triggering
     _pumpStartTime = null;
-    
+
+    if (!mounted) return;
+
+    if (!charged) {
+      _showSnackBar(
+        WalletService.lastError ??
+            'Could not record this fill-up. Please check your connection.',
+        isError: true,
+      );
+    }
+
     // Show completion dialog
     showDialog(
       context: context,
@@ -181,11 +197,11 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
         actions: [
           ElevatedButton(
             onPressed: () async {
+              final navigator = Navigator.of(context);
               // Close servo before leaving (backup to hardware timer)
               await Esp32Service.servoOff();
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
+              navigator.pop();
+              navigator.pushReplacement(
                 MaterialPageRoute(builder: (_) => const HomeScreen()),
               );
             },
@@ -220,37 +236,53 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
 
   Future<void> _fetchStatus() async {
     final status = await Esp32Service.getStatus();
-    
-    if (mounted) {
-      // Update global hazard status
-      if (status != null) {
-        AppState.updateHazardStatus(status.hazardActive);
-      }
+    if (!mounted) return;
 
-      setState(() {
+    // Update global hazard status
+    if (status != null) {
+      AppState.updateHazardStatus(status.hazardActive);
+    }
+
+    setState(() {
+      _isFirstLoad = false;
+
+      if (status != null) {
+        _consecutiveFailures = 0;
         _status = status;
-        _isConnecting = status != null;
-        
+        AppState.isEsp32Connected = true;
+
         // Track pump duration
-        if (status != null && status.pumpRunning && _pumpStartTime == null) {
-          _pumpStartTime = DateTime.now().subtract(Duration(milliseconds: status.pumpRunTimeMs));
+        if (status.pumpRunning && _pumpStartTime == null) {
+          _pumpStartTime =
+              DateTime.now().subtract(Duration(milliseconds: status.pumpRunTimeMs));
           _startDurationTracking();
         }
-      });
-      
-      // Handle fueling completion or hazard stop outside setState
-      if (_pumpStartTime != null && !_hasCompleted) {
-        // If hazard detected during filling
-        if (status != null && status.hazardActive) {
-          _stopDurationTracking();
-          await _onHazardStop();
-        } 
-        // Normal completion
-        else if (status == null || !status.pumpRunning) {
-          _stopDurationTracking();
-          await _onFuelingComplete();
+      } else {
+        _consecutiveFailures++;
+        if (_consecutiveFailures >= _failureTolerance) {
+          // Only declare the controller offline after repeated failures, so a
+          // single dropped poll does not blank out a live session.
+          _status = null;
+          AppState.isEsp32Connected = false;
         }
       }
+    });
+
+    // Handle fueling completion or hazard stop outside setState
+    if (_pumpStartTime == null || _hasCompleted) return;
+
+    if (status != null && status.hazardActive) {
+      _stopDurationTracking();
+      await _onHazardStop();
+    } else if (status != null && !status.pumpRunning) {
+      // The controller reported the pump has stopped - the session is done.
+      _stopDurationTracking();
+      await _onFuelingComplete();
+    } else if (status == null && _consecutiveFailures >= _failureTolerance) {
+      // Lost the controller mid-fill. Settle up with what was dispensed so
+      // far rather than leaving the order pending forever.
+      _stopDurationTracking();
+      await _onFuelingComplete();
     }
   }
 
@@ -265,9 +297,17 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
     final dispensedLiters = (_elapsedDuration.inSeconds * litersPerSecond).toDouble();
     final dispensedMMK = (dispensedLiters * pricePerLiter).toDouble();
 
-    // Deduct only what was dispensed
-    AppState.walletBalance -= dispensedMMK;
-    
+    // Deduct only what was dispensed - through Firestore, so the deduction
+    // survives a re-login.
+    await WalletService.applyTransaction({
+      'id': 'HAZ${DateTime.now().millisecondsSinceEpoch}',
+      'type': 'purchase',
+      'amount': dispensedMMK,
+      'description': 'Fuel Purchase (hazard stop) - ${AppState.selectedFuelType}',
+      'timestamp': DateTime.now().toIso8601String(),
+      'status': 'Completed',
+    }, -dispensedMMK);
+
     // Save partial history with hazard tag
     final hazardOrder = {
       'fuelType': AppState.selectedFuelType,
@@ -290,22 +330,27 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
   Future<void> _manualRefresh() async {
     setState(() => _isLoading = true);
     await _fetchStatus();
+    if (!mounted) return;
     setState(() => _isLoading = false);
   }
 
   Future<void> _pumpOn() async {
     setState(() => _isLoading = true);
     final result = await Esp32Service.pumpOn();
+    if (!mounted) return;
     _showResult(result, 'Pump ON');
     await _fetchStatus();
+    if (!mounted) return;
     setState(() => _isLoading = false);
   }
 
   Future<void> _pumpOff() async {
     setState(() => _isLoading = true);
     final result = await Esp32Service.pumpOff();
+    if (!mounted) return;
     _showResult(result, 'Pump OFF');
     await _fetchStatus();
+    if (!mounted) return;
     setState(() => _isLoading = false);
   }
 
@@ -329,11 +374,13 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed == true && mounted) {
       setState(() => _isLoading = true);
       final result = await Esp32Service.emergencyStop();
+      if (!mounted) return;
       _showResult(result, 'Emergency Stop');
       await _fetchStatus();
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
@@ -350,6 +397,7 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -386,7 +434,13 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
+            onPressed: _isLoading ? null : _showIpDialog,
+            tooltip: 'Pump controller address',
+            icon: const Icon(Icons.settings_ethernet),
+          ),
+          IconButton(
             onPressed: _isLoading ? null : _manualRefresh,
+            tooltip: 'Refresh',
             icon: _isLoading
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.refresh),
@@ -404,18 +458,158 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
                 // Main Status Card with Car Plate, Liters, Amount, Duration
                 _buildMainStatusCard(),
                 const SizedBox(height: 16),
-                
+
                 // Progress Line
                 _buildProgressCard(),
                 const SizedBox(height: 16),
-                
+
                 // Emergency Stop
                 _buildEmergencyStopButton(),
-              ],
+              ] else
+                // Never leave the screen blank - say what is happening and
+                // give the user a way to fix it.
+                _buildConnectionState(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Shown while the first poll is in flight, and whenever the controller
+  /// cannot be reached.
+  Widget _buildConnectionState() {
+    if (_isFirstLoad) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 80),
+        child: Column(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 20),
+            Text(
+              'Connecting to the fuel pump...',
+              style: TextStyle(fontSize: 16, color: Colors.black54),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Column(
+        children: [
+          Icon(Icons.wifi_off, size: 72, color: Colors.red.shade300),
+          const SizedBox(height: 20),
+          const Text(
+            'Pump controller not reachable',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Tried ${Esp32Service.baseUrl}/status',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade700, fontFamily: 'monospace'),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Make sure your phone is on the same Wi-Fi network as the ESP32, '
+            'then check the address below.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 24),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : _manualRefresh,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _isLoading ? null : _showIpDialog,
+                icon: const Icon(Icons.settings_ethernet),
+                label: const Text('Change IP address'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Let the user point the app at the ESP32's current address. The device is
+  /// on DHCP, so a hardcoded IP goes stale every time it reconnects.
+  Future<void> _showIpDialog() async {
+    final controller = TextEditingController(text: AppState.esp32IpAddress);
+    String? errorText;
+
+    final newIp = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Pump Controller Address'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'ESP32 IP address',
+                  hintText: AppState.defaultEsp32Ip,
+                  errorText: errorText,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'The ESP32 prints its IP address to the serial monitor when it '
+                'joins the Wi-Fi network.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('CANCEL'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final value = controller.text.trim();
+                if (!Esp32Service.isValidIp(value)) {
+                  setDialogState(() => errorText = 'Enter a valid IPv4 address');
+                  return;
+                }
+                Navigator.pop(dialogContext, value);
+              },
+              child: const Text('SAVE'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (newIp == null || !mounted) return;
+
+    Esp32Service.setIpAddress(newIp);
+    setState(() {
+      _status = null;
+      _isFirstLoad = true;
+      _consecutiveFailures = 0;
+    });
+    await _manualRefresh();
+    if (!mounted) return;
+    _showSnackBar(
+      AppState.isEsp32Connected
+          ? 'Connected to $newIp'
+          : 'Still cannot reach $newIp',
+      isError: !AppState.isEsp32Connected,
     );
   }
 
@@ -448,7 +642,6 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
       remainingLiters = 0;
     }
     
-    final remainingMMK = (remainingLiters * pricePerLiter).toDouble();
     final dispensedLiters = (wantLiters - remainingLiters).clamp(0, double.infinity).toDouble();
     final dispensedMMK = (dispensedLiters * pricePerLiter).toDouble();
     

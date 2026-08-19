@@ -22,6 +22,10 @@ class AuthService {
         );
       });
       
+      // A brand new account starts from a clean slate - never inherit the
+      // previous user's balance or history that may still be in memory.
+      AppState.clearUserData();
+
       // Save user profile to Firestore with timeout
       if (result.user != null && name != null) {
         await _firestore.collection('users').doc(result.user!.uid).set({
@@ -32,10 +36,16 @@ class AuthService {
         }).timeout(const Duration(seconds: 5), onTimeout: () {
           // Continue even if Firestore fails
         });
-        
+
         // Save to AppState
         AppState.customerName = name;
         AppState.licensePlate = licensePlate ?? '';
+      }
+
+      // Create the wallet document up front. Without it the first top-up has
+      // nothing to write into and the balance is silently lost on re-login.
+      if (result.user != null) {
+        await WalletService.ensureWallet();
       }
       
       return {
@@ -69,6 +79,10 @@ class AuthService {
         );
       });
       
+      // Drop whatever the previously signed-in user left in memory before
+      // loading this account's data.
+      AppState.clearUserData();
+
       // Fetch user profile from Firestore with timeout
       if (result.user != null) {
         try {
@@ -79,10 +93,10 @@ class AuthService {
             AppState.customerName = data?['name'] ?? '';
             AppState.licensePlate = data?['licensePlate'] ?? '';
           }
-          
-          // Load wallet data from Firestore
+
+          // Load wallet data from Firestore (creates the wallet if missing)
           await WalletService.loadWalletData();
-          
+
           // Load order history from Firestore
           await WalletService.loadOrders();
         } catch (e) {
@@ -111,6 +125,8 @@ class AuthService {
   static Future<Map<String, dynamic>> logout() async {
     try {
       await _auth.signOut();
+      // Wallet and history belong to the account that just signed out.
+      AppState.clearUserData();
       return {
         'success': true,
         'message': 'Logout successful',
