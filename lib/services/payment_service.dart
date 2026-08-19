@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:cloud_functions/cloud_functions.dart';
 
 /// Payment Service for KBZPay, Wave Pay, and AYA Pay integration

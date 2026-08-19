@@ -85,18 +85,25 @@ class _WalletScreenState extends State<WalletScreen> {
               const SizedBox(height: 20),
               const Text('Select Payment Method', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 10),
-              _buildPaymentOptionModal('KBZPay', Icons.account_balance, Colors.blue, selectedMethod, (val) {
-                setModalState(() => selectedMethod = val);
-                _selectedPaymentMethod = val;
-              }),
-              _buildPaymentOptionModal('Wave Pay', Icons.waves, Colors.orange, selectedMethod, (val) {
-                setModalState(() => selectedMethod = val);
-                _selectedPaymentMethod = val;
-              }),
-              _buildPaymentOptionModal('AYA Pay', Icons.payment, Colors.purple, selectedMethod, (val) {
-                setModalState(() => selectedMethod = val);
-                _selectedPaymentMethod = val;
-              }),
+              RadioGroup<String>(
+                groupValue: selectedMethod,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setModalState(() => selectedMethod = value);
+                  _selectedPaymentMethod = value;
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildPaymentOptionModal(
+                        'KBZPay', Icons.account_balance, Colors.blue, selectedMethod),
+                    _buildPaymentOptionModal(
+                        'Wave Pay', Icons.waves, Colors.orange, selectedMethod),
+                    _buildPaymentOptionModal(
+                        'AYA Pay', Icons.payment, Colors.purple, selectedMethod),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -121,7 +128,9 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  Widget _buildPaymentOptionModal(String name, IconData icon, Color color, String selected, Function(String) onSelect) {
+  /// One payment method row. Selection is handled by the enclosing
+  /// [RadioGroup], so the tile only declares its own value.
+  Widget _buildPaymentOptionModal(String name, IconData icon, Color color, String selected) {
     final isSelected = selected == name;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -135,8 +144,6 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       child: RadioListTile<String>(
         value: name,
-        groupValue: selected,
-        onChanged: (value) => onSelect(value!),
         title: Row(
           children: [
             Container(

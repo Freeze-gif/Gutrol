@@ -14,7 +14,6 @@ class FuelOrderScreen extends StatefulWidget {
 
 class _FuelOrderScreenState extends State<FuelOrderScreen> {
   String _selectedFuelType = 'Diesel';
-  String _selectedMode = 'Manual Filling';
   final _amountController = TextEditingController();
   bool _isLoading = false;
   bool _isFullTank = false;
@@ -110,8 +109,9 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
       }
     }
     
+    if (!mounted) return;
     setState(() => _isLoading = false);
-    
+
     // Navigate immediately to live status screen (no delay, no error messages)
     Navigator.pushReplacement(
       context,
@@ -122,7 +122,6 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
   void _setFullTankMode() {
     setState(() {
       _isFullTank = true;
-      _selectedMode = 'Auto Filling';
       _amountController.clear();
     });
     _showSuccess('Full Tank mode selected - Auto filling enabled');
@@ -131,7 +130,6 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
   void _setManualMode() {
     setState(() {
       _isFullTank = false;
-      _selectedMode = 'Manual Filling';
     });
   }
 
@@ -144,17 +142,6 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating),
-    );
-  }
-
-  void _showWarning(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.orange,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
-      ),
     );
   }
 

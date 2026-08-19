@@ -334,26 +334,6 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
     setState(() => _isLoading = false);
   }
 
-  Future<void> _pumpOn() async {
-    setState(() => _isLoading = true);
-    final result = await Esp32Service.pumpOn();
-    if (!mounted) return;
-    _showResult(result, 'Pump ON');
-    await _fetchStatus();
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-  }
-
-  Future<void> _pumpOff() async {
-    setState(() => _isLoading = true);
-    final result = await Esp32Service.pumpOff();
-    if (!mounted) return;
-    _showResult(result, 'Pump OFF');
-    await _fetchStatus();
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-  }
-
   Future<void> _emergencyStop() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -707,7 +687,7 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
                     child: _buildMetricCard(
                       icon: Icons.local_gas_station,
                       label: 'Fuel Dispensed',
-                      value: '${dispensedLiters.toStringAsFixed(2)}',
+                      value: dispensedLiters.toStringAsFixed(2),
                       unit: 'Liters',
                       color: Colors.blue,
                     ),
@@ -718,7 +698,7 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
                     child: _buildMetricCard(
                       icon: Icons.attach_money,
                       label: 'Amount',
-                      value: '${dispensedMMK.toStringAsFixed(0)}',
+                      value: dispensedMMK.toStringAsFixed(0),
                       unit: 'MMK',
                       color: Colors.green,
                     ),
@@ -906,111 +886,6 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
                 Text(
                   'Target: ${wantLiters.toStringAsFixed(2)} L',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTankInfoCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Station Tank Status',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTankMetric(
-                    'Available',
-                    '${_status!.tankLiters.toStringAsFixed(1)} L',
-                    Colors.blue,
-                  ),
-                ),
-                Expanded(
-                  child: _buildTankMetric(
-                    'Value',
-                    '${_status!.tankMMK.toStringAsFixed(0)} Ks',
-                    Colors.green,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTankMetric(String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: color.withAlpha((0.1 * 255).round()),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-          const SizedBox(height: 4),
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickControls() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Quick Controls',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _status!.emergencyStop ? null : _pumpOn,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('START'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _pumpOff,
-                    icon: const Icon(Icons.stop),
-                    label: const Text('STOP'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
                 ),
               ],
             ),

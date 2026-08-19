@@ -61,10 +61,6 @@ class PetrolCustomerApp extends StatelessWidget {
 
           onError: Colors.white,
 
-          background: Color(0xFFE3F2FD),    // Light sky blue background
-
-          onBackground: Color(0xFF1565C0),  // Blue text on light bg
-
         ),
 
         useMaterial3: true,

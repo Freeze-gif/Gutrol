@@ -42,8 +42,8 @@ class HazardManager {
       context: context,
       barrierDismissible: false,
       useRootNavigator: true,
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false,
+      builder: (context) => PopScope(
+        canPop: false,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           backgroundColor: Colors.red.shade50,
@@ -77,8 +77,8 @@ class HazardManager {
       context: context,
       barrierDismissible: false,
       useRootNavigator: true,
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false,
+      builder: (context) => PopScope(
+        canPop: false,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           backgroundColor: Colors.green.shade50,

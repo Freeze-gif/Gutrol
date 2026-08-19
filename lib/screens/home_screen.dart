@@ -19,7 +19,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _isConnecting = false;
   Timer? _hazardPollingTimer;
 
   @override
@@ -89,18 +88,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _testConnection() async {
-    setState(() => _isConnecting = true);
-
     try {
       final isConnected = await Esp32Service.testConnection().timeout(
         const Duration(seconds: 3),
         onTimeout: () => false,
       );
 
-      setState(() {
-        _isConnecting = false;
-        AppState.isEsp32Connected = isConnected;
-      });
+      if (!mounted) return;
+      setState(() => AppState.isEsp32Connected = isConnected);
 
       if (mounted && isConnected) {
         // Only show success snackbar, don't block on failure
@@ -120,11 +115,9 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } catch (e) {
-      setState(() {
-        _isConnecting = false;
-        AppState.isEsp32Connected = false;
-      });
-      print('[ESP32] Connection test error: $e');
+      if (!mounted) return;
+      setState(() => AppState.isEsp32Connected = false);
+      debugPrint('[ESP32] Connection test error: $e');
     }
   }
 
@@ -156,11 +149,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _logout() async {
+    final navigator = Navigator.of(context);
     final result = await AuthService.logout();
+    if (!mounted) return;
     if (result['success']) {
       AppState.clearUserData();
-      Navigator.pushReplacement(
-        context,
+      navigator.pushReplacement(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
     }
@@ -874,48 +868,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _buildRecentActivityCard(),
         const SizedBox(height: 24),
       ],
-    );
-  }
-
-  Widget _buildMenuCard({
-    required IconData icon,
-    required String title,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 40,
-                color: color,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

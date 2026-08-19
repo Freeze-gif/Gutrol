@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import '../services/app_state.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
@@ -50,6 +49,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       licensePlate: _licensePlateController.text.trim().toUpperCase(),
     );
 
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (result['success']) {
