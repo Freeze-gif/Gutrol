@@ -986,6 +986,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       _navigateTo(const NotificationScreen());
                     },
                   ),
+                  _buildDrawerItem(
+                    icon: Icons.settings_ethernet,
+                    title: 'ESP32 Settings',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showEsp32Settings();
+                    },
+                  ),
                   const Divider(height: 1),
                   _buildDrawerItem(
                     icon: Icons.headset_mic_outlined,
@@ -1610,6 +1618,196 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text('I Understand'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showEsp32Settings() {
+    final ipController = TextEditingController(text: AppState.esp32IpAddress);
+    bool isTesting = false;
+    bool? testResult;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.settings_ethernet, color: Colors.blue.shade700),
+              const SizedBox(width: 8),
+              const Text('ESP32 Settings'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Connection status
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppState.isEsp32Connected
+                      ? Colors.green.shade50
+                      : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppState.isEsp32Connected
+                        ? Colors.green.shade200
+                        : Colors.red.shade200,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      AppState.isEsp32Connected
+                          ? Icons.check_circle
+                          : Icons.error_outline,
+                      color: AppState.isEsp32Connected
+                          ? Colors.green
+                          : Colors.red,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      AppState.isEsp32Connected
+                          ? 'Connected'
+                          : 'Not Connected',
+                      style: TextStyle(
+                        color: AppState.isEsp32Connected
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // IP address input
+              TextField(
+                controller: ipController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'ESP32 IP Address',
+                  hintText: 'e.g., 10.247.47.79',
+                  prefixIcon: const Icon(Icons.wifi),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: Colors.blue.shade400,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Test result
+              if (testResult != null)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: testResult!
+                        ? Colors.green.shade50
+                        : Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        testResult!
+                            ? Icons.check_circle
+                            : Icons.warning_amber,
+                        color: testResult!
+                            ? Colors.green
+                            : Colors.orange,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          testResult!
+                              ? 'Connection successful!'
+                              : 'Could not connect. Check IP and ensure ESP32 is on.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: testResult!
+                                ? Colors.green.shade700
+                                : Colors.orange.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            // Test Connection button
+            OutlinedButton.icon(
+              onPressed: isTesting
+                  ? null
+                  : () async {
+                      final ip = ipController.text.trim();
+                      if (!Esp32Service.isValidIp(ip)) {
+                        setDialogState(() {
+                          testResult = false;
+                        });
+                        return;
+                      }
+                      setDialogState(() {
+                        isTesting = true;
+                        testResult = null;
+                      });
+                      Esp32Service.setIpAddress(ip);
+                      final connected = await Esp32Service.testConnection();
+                      setDialogState(() {
+                        isTesting = false;
+                        testResult = connected;
+                      });
+                    },
+              icon: isTesting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.speed, size: 18),
+              label: Text(isTesting ? 'Testing...' : 'Test'),
+            ),
+            // Save button
+            ElevatedButton(
+              onPressed: () {
+                final ip = ipController.text.trim();
+                if (!Esp32Service.isValidIp(ip)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a valid IP address'),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                AppState.setEsp32Ip(ip);
+                Esp32Service.setIpAddress(ip);
+                Navigator.pop(context);
+                _testConnection(); // Re-test with new IP
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade700,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -17,7 +17,7 @@ class AppState {
   static List<Map<String, dynamic>> walletTransactions = [];
   
   // ESP32 Connection Settings
-  static String esp32IpAddress = '10.130.26.120';
+  static String esp32IpAddress = '10.247.47.79';
   static bool isEsp32Connected = false;
 
   // Hazard State
