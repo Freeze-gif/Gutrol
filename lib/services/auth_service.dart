@@ -22,16 +22,18 @@ class AuthService {
         );
       });
       
-      // Save user profile to Firestore with timeout
+      // Save user profile to Firestore (non-critical — don't fail registration if this fails)
       if (result.user != null && name != null) {
-        await _firestore.collection('users').doc(result.user!.uid).set({
-          'name': name,
-          'licensePlate': licensePlate ?? '',
-          'email': email,
-          'createdAt': FieldValue.serverTimestamp(),
-        }).timeout(const Duration(seconds: 5), onTimeout: () {
-          // Continue even if Firestore fails
-        });
+        try {
+          await _firestore.collection('users').doc(result.user!.uid).set({
+            'name': name,
+            'licensePlate': licensePlate ?? '',
+            'email': email,
+            'createdAt': FieldValue.serverTimestamp(),
+          }).timeout(const Duration(seconds: 5));
+        } catch (_) {
+          // Continue even if Firestore profile save fails — auth was successful
+        }
         
         // Save to AppState
         AppState.customerName = name;

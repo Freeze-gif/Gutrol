@@ -537,7 +537,7 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisCount: 2,
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
-      childAspectRatio: 1.4,
+      childAspectRatio: 1.2,
       children: [
         _buildActionCard(
           icon: Icons.local_gas_station,
