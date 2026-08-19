@@ -75,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'Petrol Customer',
+                  'Gutrol',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,

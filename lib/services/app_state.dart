@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class AppState {
   static String customerName = '';
   static String licensePlate = '';
@@ -6,36 +8,31 @@ class AppState {
   static String selectedAmount = '';
   static String liveStatus = 'Request Submitted';
   static double progress = 0.0;
+  
+  // Order targets for live status calculation
+  static double targetLiters = 0.0;
+  static double targetMMK = 0.0;
+  static double walletBalance = 0.0;
   static List<Map<String, dynamic>> history = [];
+  static List<Map<String, dynamic>> walletTransactions = [];
   
   // ESP32 Connection Settings
-  static String esp32IpAddress = '';
+  static String esp32IpAddress = '10.130.26.120';
   static bool isEsp32Connected = false;
 
+  // Hazard State
+  static bool hazardActive = false;
+  static final ValueNotifier<bool> hazardNotifier = ValueNotifier<bool>(false);
+
+  static void updateHazardStatus(bool isActive) {
+    if (hazardActive != isActive) {
+      hazardActive = isActive;
+      hazardNotifier.value = isActive;
+    }
+  }
+
   static void init() {
-    history = [
-      {
-        'fuelType': 'Petrol 92',
-        'mode': 'Auto Filling',
-        'amount': '20 Liters',
-        'date': '2024-03-15 10:30 AM',
-        'status': 'Completed',
-      },
-      {
-        'fuelType': 'Diesel',
-        'mode': 'Manual Filling',
-        'amount': '5000 MMK',
-        'date': '2024-03-10 14:45 PM',
-        'status': 'Completed',
-      },
-      {
-        'fuelType': 'Petrol 95',
-        'mode': 'Auto Filling',
-        'amount': '30 Liters',
-        'date': '2024-02-28 09:15 AM',
-        'status': 'Completed',
-      },
-    ];
+    history = [];
   }
 
   static void clear() {
@@ -46,12 +43,18 @@ class AppState {
     selectedAmount = '';
     liveStatus = 'Request Submitted';
     progress = 0.0;
-    // Note: We don't clear ESP32 IP to persist it across sessions
+    targetLiters = 0.0;
+    targetMMK = 0.0;
+    // Note: We don't clear ESP32 IP or wallet balance to persist them across sessions
     isEsp32Connected = false;
   }
 
   static void addToHistory(Map<String, dynamic> order) {
     history.insert(0, order);
+  }
+
+  static void addWalletTransaction(Map<String, dynamic> transaction) {
+    walletTransactions.insert(0, transaction);
   }
   
   /// Set ESP32 IP address

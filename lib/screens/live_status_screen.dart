@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/pump_status.dart';
 import '../services/app_state.dart';
 import '../services/esp32_service.dart';
+import '../services/wallet_service.dart';
+import 'home_screen.dart';
 
 /// Live Status Screen - Complete Redesign
 /// Shows: Car Plate, Fuel Liters, Amount, Duration, Progress Line
@@ -17,8 +19,8 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
   PumpStatus? _status;
   bool _isLoading = false;
   bool _isConnecting = false;
-  String _errorMessage = '';
   Timer? _refreshTimer;
+  bool _hasCompleted = false; // Prevent double charging
   
   // For tracking duration
   DateTime? _pumpStartTime;
@@ -69,40 +71,220 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
     if (mounted) {
       setState(() {
         _elapsedDuration = Duration.zero;
-        _pumpStartTime = null;
       });
     }
   }
 
-  Future<void> _fetchStatus() async {
-    if (!Esp32Service.isConfigured) {
-      setState(() {
-        _errorMessage = 'ESP32 IP not configured. Go to Dashboard to set IP.';
-      });
-      return;
+  Future<void> _onFuelingComplete() async {
+    // Prevent multiple executions
+    if (_hasCompleted) return;
+    _hasCompleted = true;
+    
+    // Calculate final values - fallback to duration if ESP32 returns 0
+    const double litersPerSecond = 0.125; // 1L = 8 seconds
+    const double pricePerLiter = 3200.0;
+    
+    double wantLiters = _status?.wantLiters ?? 0;
+    double remainingLiters = _status?.remainingLiters ?? 0;
+    
+    // Use AppState target if ESP32 didn't track
+    if (wantLiters <= 0) {
+      wantLiters = AppState.targetLiters;
     }
+    
+    // If still no target, calculate from duration
+    if (wantLiters <= 0 && _elapsedDuration.inSeconds > 0) {
+      wantLiters = _elapsedDuration.inSeconds * litersPerSecond;
+    }
+    
+    // Assume all dispensed when complete
+    remainingLiters = 0;
+    
+    final dispensedLiters = (wantLiters - remainingLiters).clamp(0, double.infinity).toDouble();
+    
+    // Use AppState target MMK if available, otherwise calculate from liters
+    double dispensedMMK = AppState.targetMMK;
+    if (dispensedMMK <= 0) {
+      dispensedMMK = (dispensedLiters * pricePerLiter).toDouble();
+    }
+    
+    // Stop refresh timer
+    _refreshTimer?.cancel();
+    
+    // Deduct from wallet only once
+    AppState.walletBalance -= dispensedMMK;
+    
+    // Create fuel purchase transaction
+    final fuelTransaction = {
+      'id': 'FUEL${DateTime.now().millisecondsSinceEpoch}',
+      'type': 'purchase',
+      'amount': dispensedMMK,
+      'description': 'Fuel Purchase - ${AppState.selectedFuelType}',
+      'timestamp': DateTime.now().toIso8601String(),
+      'status': 'Completed',
+    };
+    
+    // Add to local state
+    AppState.addWalletTransaction(fuelTransaction);
+    
+    // Save to Firebase (balance + transaction)
+    await WalletService.addTransaction(fuelTransaction);
+    
+    // Update order status in history (await to ensure Firebase update completes)
+    await _updateOrderStatus(dispensedMMK);
+    
+    // Clear pump start time to prevent re-triggering
+    _pumpStartTime = null;
+    
+    // Show completion dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: Icon(Icons.check_circle, color: Colors.green.shade600, size: 64),
+        title: const Text('Fueling Complete!'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${dispensedLiters.toStringAsFixed(2)} Liters dispensed',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Total Amount: ${dispensedMMK.toStringAsFixed(0)} MMK',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Deducted from wallet',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'New Balance: ${AppState.walletBalance.toStringAsFixed(0)} MMK',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppState.walletBalance < 10000 ? Colors.red : const Color(0xFF1565C0),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () async {
+              // Close servo before leaving (backup to hardware timer)
+              await Esp32Service.servoOff();
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const HomeScreen()),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('DONE'),
+          ),
+        ],
+      ),
+    );
+  }
 
+  Future<void> _updateOrderStatus(double amount) async {
+    // Calculate liters from amount
+    const double pricePerLiter = 3200.0;
+    final liters = amount / pricePerLiter;
+    
+    // Find the pending order and update it locally
+    for (var order in AppState.history) {
+      if (order['status'] == 'Pending') {
+        order['status'] = 'Completed';
+        order['amount'] = '${liters.toStringAsFixed(2)} Liters / ${amount.toStringAsFixed(0)} MMK';
+        break;
+      }
+    }
+    
+    // Update in Firebase
+    await WalletService.updateOrderStatus('', 'Completed', amount);
+  }
+
+  Future<void> _fetchStatus() async {
     final status = await Esp32Service.getStatus();
     
     if (mounted) {
+      // Update global hazard status
+      if (status != null) {
+        AppState.updateHazardStatus(status.hazardActive);
+      }
+
       setState(() {
         _status = status;
         _isConnecting = status != null;
-        if (status == null) {
-          _errorMessage = 'Cannot connect to ESP32. Check IP and Wi-Fi.';
-        } else {
-          _errorMessage = '';
-          
-          // Track pump duration
-          if (status.pumpRunning && _pumpStartTime == null) {
-            _pumpStartTime = DateTime.now().subtract(Duration(milliseconds: status.pumpRunTimeMs));
-            _startDurationTracking();
-          } else if (!status.pumpRunning) {
-            _stopDurationTracking();
-          }
+        
+        // Track pump duration
+        if (status != null && status.pumpRunning && _pumpStartTime == null) {
+          _pumpStartTime = DateTime.now().subtract(Duration(milliseconds: status.pumpRunTimeMs));
+          _startDurationTracking();
         }
       });
+      
+      // Handle fueling completion or hazard stop outside setState
+      if (_pumpStartTime != null && !_hasCompleted) {
+        // If hazard detected during filling
+        if (status != null && status.hazardActive) {
+          _stopDurationTracking();
+          await _onHazardStop();
+        } 
+        // Normal completion
+        else if (status == null || !status.pumpRunning) {
+          _stopDurationTracking();
+          await _onFuelingComplete();
+        }
+      }
     }
+  }
+
+  Future<void> _onHazardStop() async {
+    if (_hasCompleted) return;
+    _hasCompleted = true;
+    _refreshTimer?.cancel();
+    
+    // Calculate partial values
+    const double litersPerSecond = 0.125;
+    const double pricePerLiter = 3200.0;
+    final dispensedLiters = (_elapsedDuration.inSeconds * litersPerSecond).toDouble();
+    final dispensedMMK = (dispensedLiters * pricePerLiter).toDouble();
+
+    // Deduct only what was dispensed
+    AppState.walletBalance -= dispensedMMK;
+    
+    // Save partial history with hazard tag
+    final hazardOrder = {
+      'fuelType': AppState.selectedFuelType,
+      'mode': AppState.selectedMode,
+      'amount': '${dispensedLiters.toStringAsFixed(2)} L / ${dispensedMMK.toStringAsFixed(0)} MMK',
+      'date': DateTime.now().toString(),
+      'status': 'stopped_by_hazard',
+      'hazardStop': true,
+      'note': 'Stopped due to gas hazard'
+    };
+    AppState.addToHistory(hazardOrder);
+    await WalletService.saveOrder(hazardOrder);
+    
+    // Close servo on hazard stop
+    await Esp32Service.servoOff();
+    
+    _pumpStartTime = null;
   }
 
   Future<void> _manualRefresh() async {
@@ -158,11 +340,13 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
 
   void _showResult(Map<String, dynamic> result, String action) {
     final success = result['success'] == true;
-    final message = result['message'] ?? result['error'] ?? 'Unknown response';
-    _showSnackBar(
-      success ? '$action: $message' : 'Error: $message',
-      isError: !success,
-    );
+    final message = result['message'] ?? result['error'] ?? '';
+    if (message.isNotEmpty) {
+      _showSnackBar(
+        success ? '$action: $message' : 'Error: $message',
+        isError: !success,
+      );
+    }
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -216,10 +400,6 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              // Connection Status
-              _buildConnectionCard(),
-              const SizedBox(height: 16),
-              
               if (_status != null) ...[
                 // Main Status Card with Car Plate, Liters, Amount, Duration
                 _buildMainStatusCard(),
@@ -227,14 +407,6 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
                 
                 // Progress Line
                 _buildProgressCard(),
-                const SizedBox(height: 16),
-                
-                // Tank Info
-                _buildTankInfoCard(),
-                const SizedBox(height: 16),
-                
-                // Quick Controls
-                _buildQuickControls(),
                 const SizedBox(height: 16),
                 
                 // Emergency Stop
@@ -247,59 +419,38 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
     );
   }
 
-  Widget _buildConnectionCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(
-              _isConnecting ? Icons.wifi : Icons.wifi_off,
-              color: _isConnecting ? Colors.green : Colors.red,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'ESP32 Connection',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey.shade700),
-                  ),
-                  Text(
-                    Esp32Service.isConfigured ? 'IP: ${AppState.esp32IpAddress}' : 'Not configured',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _isConnecting ? Colors.green.shade100 : Colors.red.shade100,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                _isConnecting ? 'Connected' : 'Disconnected',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _isConnecting ? Colors.green : Colors.red),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildMainStatusCard() {
     final statusColor = _getStatusColor(_status!.currentStatus);
     
-    // Calculate values
-    final remainingLiters = _status!.remainingLiters;
-    final remainingMMK = _status!.remainingMMK;
-    final dispensedLiters = _status!.wantLiters - remainingLiters;
-    final dispensedMMK = _status!.wantMMK - remainingMMK;
+    // Calculate values - using 3200 MMK per liter
+    const double pricePerLiter = 3200.0;
+    const double litersPerSecond = 0.125; // 1 Liter = 8 seconds
+    
+    // Try to get target from ESP32 first, then AppState, then duration-based
+    double wantLiters = _status!.wantLiters;
+    if (wantLiters <= 0) {
+      wantLiters = AppState.targetLiters;
+    }
+    if (wantLiters <= 0 && _elapsedDuration.inSeconds > 0) {
+      wantLiters = _elapsedDuration.inSeconds * litersPerSecond;
+    }
+    if (wantLiters <= 0) {
+      wantLiters = 1; // Default to avoid division by zero
+    }
+    
+    // Calculate remaining - use ESP32 value or estimate from duration
+    double remainingLiters = _status!.remainingLiters;
+    if (_status!.pumpRunning && _elapsedDuration.inSeconds > 0) {
+      final estimatedDispensed = _elapsedDuration.inSeconds * litersPerSecond;
+      remainingLiters = (wantLiters - estimatedDispensed).clamp(0, wantLiters);
+    } else if (!_status!.pumpRunning && _elapsedDuration.inSeconds > 0) {
+      // Pump stopped - assume all dispensed
+      remainingLiters = 0;
+    }
+    
+    final remainingMMK = (remainingLiters * pricePerLiter).toDouble();
+    final dispensedLiters = (wantLiters - remainingLiters).clamp(0, double.infinity).toDouble();
+    final dispensedMMK = (dispensedLiters * pricePerLiter).toDouble();
     
     return Card(
       elevation: 4,
@@ -340,7 +491,7 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
+                  color: statusColor.withAlpha((0.1 * 255).round()),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: statusColor, width: 2),
                 ),
@@ -429,9 +580,9 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withAlpha((0.1 * 255).round()),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withAlpha((0.3 * 255).round())),
       ),
       child: Column(
         children: [
@@ -460,12 +611,36 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
   }
 
   Widget _buildProgressCard() {
-    final progress = _status!.wantLiters > 0
-        ? ((_status!.wantLiters - _status!.remainingLiters) / _status!.wantLiters * 100).clamp(0, 100)
-        : 0.0;
+    // Progress calculation - dispensed / target
+    const double litersPerSecond = 0.125; // 1L = 8 seconds
     
-    final remainingLiters = _status!.remainingLiters;
-    final wantLiters = _status!.wantLiters;
+    // Get target from ESP32, then AppState, then duration-based estimate
+    double wantLiters = _status!.wantLiters;
+    if (wantLiters <= 0) {
+      wantLiters = AppState.targetLiters;
+    }
+    if (wantLiters <= 0 && _elapsedDuration.inSeconds > 0) {
+      wantLiters = _elapsedDuration.inSeconds * litersPerSecond;
+    }
+    if (wantLiters <= 0) {
+      wantLiters = 1; // Default to avoid division by zero
+    }
+    
+    // Calculate dispensed based on duration while pump is running
+    double dispensedLiters = 0;
+    if (_status!.pumpRunning && _elapsedDuration.inSeconds > 0) {
+      dispensedLiters = _elapsedDuration.inSeconds * litersPerSecond;
+    } else if (!_status!.pumpRunning && _elapsedDuration.inSeconds > 0) {
+      // Pump stopped - assume all dispensed based on duration
+      dispensedLiters = _elapsedDuration.inSeconds * litersPerSecond;
+    }
+    
+    // Clamp to target
+    dispensedLiters = dispensedLiters.clamp(0, wantLiters).toDouble();
+    
+    final progress = wantLiters > 0
+        ? ((dispensedLiters / wantLiters) * 100).clamp(0, 100)
+        : 0.0;
     
     return Card(
       elevation: 2,
@@ -532,7 +707,7 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Dispensed: ${(wantLiters - remainingLiters).toStringAsFixed(2)} L',
+                  'Dispensed: ${dispensedLiters.toStringAsFixed(2)} L',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
                 Text(
@@ -590,7 +765,7 @@ class _LiveStatusScreenState extends State<LiveStatusScreen> {
       padding: const EdgeInsets.all(12),
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withAlpha((0.1 * 255).round()),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(

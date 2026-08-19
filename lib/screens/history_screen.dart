@@ -1,8 +1,31 @@
 import 'package:flutter/material.dart';
 import '../services/app_state.dart';
+import '../services/wallet_service.dart';
 
-class HistoryScreen extends StatelessWidget {
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
+
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  Future<void> _loadOrders() async {
+    await WalletService.loadOrders();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -12,17 +35,53 @@ class HistoryScreen extends StatelessWidget {
         title: const Text('Order History'),
         backgroundColor: Colors.blue.shade700,
         foregroundColor: Colors.white,
-      ),
-      body: AppState.history.isEmpty
-          ? _buildEmptyState()
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: AppState.history.length,
-              itemBuilder: (context, index) {
-                final order = AppState.history[index];
-                return _buildHistoryCard(order);
-              },
+        actions: [
+          if (AppState.history.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep),
+              tooltip: 'Clear All History',
+              onPressed: () => _showClearHistoryDialog(),
             ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : AppState.history.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: AppState.history.length,
+                  itemBuilder: (context, index) {
+                    final order = AppState.history[index];
+                    return _buildHistoryCard(order);
+                  },
+                ),
+    );
+  }
+
+  void _showClearHistoryDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear History?'),
+        content: const Text('This will permanently delete all your fueling history. This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() => _isLoading = true);
+              await WalletService.clearOrderHistory();
+              setState(() => _isLoading = false);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('CLEAR ALL', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -59,7 +118,11 @@ class HistoryScreen extends StatelessWidget {
 
   Widget _buildHistoryCard(Map<String, dynamic> order) {
     final isCompleted = order['status'] == 'Completed';
-    final statusColor = isCompleted ? Colors.green : Colors.orange;
+    final isHazardStop = order['status'] == 'stopped_by_hazard';
+    final statusColor = isCompleted 
+        ? Colors.green 
+        : (isHazardStop ? Colors.red : Colors.orange);
+    final statusText = isHazardStop ? 'Hazard Stop' : (order['status'] ?? 'Pending');
 
     return Card(
       elevation: 3,
@@ -84,7 +147,7 @@ class HistoryScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      order['fuelType'],
+                      order['fuelType'] ?? 'Petrol 92',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -98,35 +161,61 @@ class HistoryScreen extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
+                    color: statusColor.withAlpha((0.1 * 255).round()),
                     borderRadius: BorderRadius.circular(20),
+                    border: isHazardStop ? Border.all(color: statusColor.withAlpha((0.5 * 255).round())) : null,
                   ),
-                  child: Text(
-                    order['status'],
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: statusColor,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isHazardStop) 
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.warning_amber_rounded, color: statusColor, size: 14),
+                        ),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: statusColor,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
             const Divider(height: 20),
+            if (isHazardStop && order['note'] != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  order['note'],
+                  style: TextStyle(color: Colors.red.shade800, fontSize: 12, fontStyle: FontStyle.italic),
+                ),
+              ),
+            ],
             Row(
               children: [
                 Expanded(
                   child: _buildInfoItem(
                     Icons.settings,
                     'Mode',
-                    order['mode'],
+                    order['mode'] ?? 'Manual',
                   ),
                 ),
                 Expanded(
                   child: _buildInfoItem(
                     Icons.attach_money,
                     'Amount',
-                    order['amount'],
+                    order['amount']?.toString() ?? '0 MMK',
                   ),
                 ),
               ],
@@ -141,7 +230,7 @@ class HistoryScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  order['date'],
+                  order['date']?.toString() ?? '',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey.shade500,
@@ -164,24 +253,27 @@ class HistoryScreen extends StatelessWidget {
           color: Colors.grey.shade500,
         ),
         const SizedBox(width: 6),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey.shade500,
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade500,
+                ),
               ),
-            ),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );

@@ -13,6 +13,7 @@ class PumpStatus {
   final double tankLiters;
   final double tankMMK;
   final bool emergencyStop;
+  final bool hazardActive;
 
   PumpStatus({
     required this.pumpRunning,
@@ -27,6 +28,7 @@ class PumpStatus {
     required this.tankLiters,
     required this.tankMMK,
     required this.emergencyStop,
+    required this.hazardActive,
   });
 
   /// Create PumpStatus from ESP32 JSON response
@@ -44,6 +46,7 @@ class PumpStatus {
       tankLiters: (json['tankLiters'] ?? 0).toDouble(),
       tankMMK: (json['tankMMK'] ?? 0).toDouble(),
       emergencyStop: json['emergencyStop'] ?? false,
+      hazardActive: json['hazardActive'] ?? false,
     );
   }
 
@@ -62,6 +65,7 @@ class PumpStatus {
       'tankLiters': tankLiters,
       'tankMMK': tankMMK,
       'emergencyStop': emergencyStop,
+      'hazardActive': hazardActive,
     };
   }
 

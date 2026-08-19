@@ -41,48 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDfeNCsFhV18PNSaQSqYL6a375yBHWd6n0',
-    appId: '1:662648386054:web:e0c7bc11649de9b90fc987',
-    messagingSenderId: '662648386054',
-    projectId: 'iot-63-8a438',
-    authDomain: 'iot-63-8a438.firebaseapp.com',
-    storageBucket: 'iot-63-8a438.firebasestorage.app',
-    measurementId: 'G-5634E8SVJD',
+    apiKey: 'AIzaSyCXz26FEAOzcDegn7Q1r9z8dd_WNI4NLJ0',
+    appId: '1:920257285665:web:a307c79a2c293a51e59d60',
+    messagingSenderId: '920257285665',
+    projectId: 'iot663',
+    authDomain: 'iot663.firebaseapp.com',
+    storageBucket: 'iot663.firebasestorage.app',
+    measurementId: 'G-GHP3X44GS0',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCLq-Iu2vH_H6l1BSYLnGZR0glPhXcYCpI',
-    appId: '1:662648386054:android:60c837571cc74e740fc987',
-    messagingSenderId: '662648386054',
-    projectId: 'iot-63-8a438',
-    storageBucket: 'iot-63-8a438.firebasestorage.app',
+    apiKey: 'AIzaSyDqsyqz_FXXQ8f8ytSWVzm4CshKLNaYiUM',
+    appId: '1:920257285665:android:be8c3b0b66aaeff5e59d60',
+    messagingSenderId: '920257285665',
+    projectId: 'iot663',
+    storageBucket: 'iot663.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBifzNF1GCpKhcS4KR-lUk41jNhaTCnlr0',
-    appId: '1:662648386054:ios:9f76c00fec1282320fc987',
-    messagingSenderId: '662648386054',
-    projectId: 'iot-63-8a438',
-    storageBucket: 'iot-63-8a438.firebasestorage.app',
+    apiKey: 'AIzaSyDCzdUCqjmzLJcdzTWUKBvGc_i-DMr1Mh0',
+    appId: '1:920257285665:ios:17265bf9a91662d4e59d60',
+    messagingSenderId: '920257285665',
+    projectId: 'iot663',
+    storageBucket: 'iot663.firebasestorage.app',
     iosBundleId: 'com.example.petrolCustomerApp',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBifzNF1GCpKhcS4KR-lUk41jNhaTCnlr0',
-    appId: '1:662648386054:ios:9f76c00fec1282320fc987',
-    messagingSenderId: '662648386054',
-    projectId: 'iot-63-8a438',
-    storageBucket: 'iot-63-8a438.firebasestorage.app',
+    apiKey: 'AIzaSyDCzdUCqjmzLJcdzTWUKBvGc_i-DMr1Mh0',
+    appId: '1:920257285665:ios:17265bf9a91662d4e59d60',
+    messagingSenderId: '920257285665',
+    projectId: 'iot663',
+    storageBucket: 'iot663.firebasestorage.app',
     iosBundleId: 'com.example.petrolCustomerApp',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDfeNCsFhV18PNSaQSqYL6a375yBHWd6n0',
-    appId: '1:662648386054:web:f665e0832172c24b0fc987',
-    messagingSenderId: '662648386054',
-    projectId: 'iot-63-8a438',
-    authDomain: 'iot-63-8a438.firebaseapp.com',
-    storageBucket: 'iot-63-8a438.firebasestorage.app',
-    measurementId: 'G-7VJ89RBDM3',
+    apiKey: 'AIzaSyCXz26FEAOzcDegn7Q1r9z8dd_WNI4NLJ0',
+    appId: '1:920257285665:web:10f5f824095dbc74e59d60',
+    messagingSenderId: '920257285665',
+    projectId: 'iot663',
+    authDomain: 'iot663.firebaseapp.com',
+    storageBucket: 'iot663.firebasestorage.app',
+    measurementId: 'G-CG0M0K2CG0',
   );
+
 }

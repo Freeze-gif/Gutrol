@@ -11,7 +11,6 @@ plugins {
 android {
     namespace = "com.example.petrol_customer_app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "26.3.11579264"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

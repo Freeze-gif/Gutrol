@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import '../services/app_state.dart';
 import '../services/esp32_service.dart';
+import '../services/wallet_service.dart';
 import 'live_status_screen.dart';
+import 'payment/wallet_screen.dart';
 
 class FuelOrderScreen extends StatefulWidget {
   const FuelOrderScreen({super.key});
@@ -11,14 +13,14 @@ class FuelOrderScreen extends StatefulWidget {
 }
 
 class _FuelOrderScreenState extends State<FuelOrderScreen> {
-  String _selectedFuelType = 'Petrol 92';
+  String _selectedFuelType = 'Diesel';
   String _selectedMode = 'Manual Filling';
   final _amountController = TextEditingController();
   bool _isLoading = false;
   bool _isFullTank = false;
 
-  final double _pricePerLiter = 2200.0;
-  final List<String> _fuelTypes = ['Petrol 92', 'Petrol 95', 'Diesel'];
+  final double _pricePerLiter = 3200.0; // 1 Liter = 3200 MMK
+  final List<String> _fuelTypes = ['Diesel', 'Petrol 92', 'Petrol 95'];
 
   @override
   void initState() {
@@ -49,6 +51,22 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
       litersAmount = mmkAmount / _pricePerLiter;
     }
 
+    // Check wallet balance for manual filling
+    if (!_isFullTank && mmkAmount > AppState.walletBalance) {
+      setState(() => _isLoading = false);
+      _showError('Insufficient wallet balance. Current: ${AppState.walletBalance.toStringAsFixed(0)} MMK');
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()));
+      return;
+    }
+
+    // Check minimum balance for full tank
+    if (_isFullTank && AppState.walletBalance < 20000) {
+      setState(() => _isLoading = false);
+      _showError('Minimum 20,000 MMK balance required for Full Tank mode');
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()));
+      return;
+    }
+
     AppState.selectedFuelType = _selectedFuelType;
     AppState.selectedMode = _isFullTank ? 'Auto Filling (Full Tank)' : 'Manual Filling';
     AppState.selectedAmount = _isFullTank 
@@ -63,41 +81,39 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
       'status': 'Pending',
     };
     AppState.addToHistory(order);
+    
+    // Save order to Firebase
+    await WalletService.saveOrder(order);
 
-    bool success = false;
-    String message = '';
-
+    // Save targets for live status tracking
+    AppState.targetLiters = litersAmount;
+    // For auto mode, estimate 50 liters for full tank
     if (_isFullTank) {
-      final result = await Esp32Service.setAutoMode();
-      if (result['success'] == true) {
-        final startResult = await Esp32Service.startAutoFilling();
-        success = startResult['success'] == true;
-        message = startResult['message'] ?? startResult['error'] ?? 'Unknown response';
-      } else {
-        success = false;
-        message = result['error'] ?? 'Failed to set auto mode';
-      }
+      AppState.targetLiters = 50.0;
+    }
+    // Set target MMK for charging after fueling
+    AppState.targetMMK = mmkAmount;
+
+    // Send ESP32 command in background (fire and forget - no delay)
+    if (_isFullTank) {
+      // Fire and forget - don't wait for response
+      Esp32Service.setAutoMode().then((_) {
+        Esp32Service.startAutoFilling();
+      });
     } else {
       if (mmkAmount > 0) {
-        final result = await Esp32Service.startManualFilling(mmkAmount);
-        success = result['success'] == true;
-        message = result['message'] ?? result['error'] ?? 'Unknown response';
-      } else {
-        message = 'Invalid MMK amount';
+        // Fire and forget - don't wait for response
+        Esp32Service.startManualFilling(mmkAmount);
       }
     }
-
+    
     setState(() => _isLoading = false);
-
-    if (success) {
-      _showSuccess('Order submitted: $message');
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LiveStatusScreen()),
-      );
-    } else {
-      _showError('Failed: $message');
-    }
+    
+    // Navigate immediately to live status screen (no delay, no error messages)
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LiveStatusScreen()),
+    );
   }
 
   void _setFullTankMode() {
@@ -125,6 +141,17 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  void _showWarning(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
     );
   }
 
@@ -159,7 +186,14 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
                       items: _fuelTypes.map((String value) {
                         return DropdownMenuItem<String>(value: value, child: Text(value));
                       }).toList(),
-                      onChanged: (String? newValue) => setState(() => _selectedFuelType = newValue!),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedFuelType = newValue!;
+                        });
+                        // Send fuel selection to ESP32 for servo control
+                        final typeCode = _selectedFuelType == 'Petrol 92' ? '92' : (_selectedFuelType == 'Petrol 95' ? '95' : 'diesel');
+                        Esp32Service.selectFuelType(typeCode);
+                      },
                     ),
                   ),
                 ),
@@ -294,7 +328,7 @@ class _FuelOrderScreenState extends State<FuelOrderScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.1) : Colors.grey.shade100,
+          color: isSelected ? color.withAlpha((0.1 * 255).round()) : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: isSelected ? color : Colors.grey.shade300, width: 2),
         ),

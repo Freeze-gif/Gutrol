@@ -1,32 +1,13 @@
 {
   "project_info": {
-    "project_number": "662648386054",
-    "project_id": "iot-63-8a438",
-    "storage_bucket": "iot-63-8a438.firebasestorage.app"
+    "project_number": "920257285665",
+    "project_id": "iot663",
+    "storage_bucket": "iot663.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:662648386054:android:0409ba8fe14f12800fc987",
-        "android_client_info": {
-          "package_name": "com.example.myapp"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCLq-Iu2vH_H6l1BSYLnGZR0glPhXcYCpI"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:662648386054:android:60c837571cc74e740fc987",
+        "mobilesdk_app_id": "1:920257285665:android:be8c3b0b66aaeff5e59d60",
         "android_client_info": {
           "package_name": "com.example.petrol_customer_app"
         }
@@ -34,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCLq-Iu2vH_H6l1BSYLnGZR0glPhXcYCpI"
+          "current_key": "AIzaSyDqsyqz_FXXQ8f8ytSWVzm4CshKLNaYiUM"
         }
       ],
       "services": {

@@ -79,14 +79,14 @@ class NotificationScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withAlpha((0.05 * 255).round()),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
         border: isRead
             ? null
-            : Border.all(color: notification['color'].withOpacity(0.3), width: 1),
+            : Border.all(color: notification['color'].withAlpha((0.3 * 255).round()), width: 1),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
@@ -106,7 +106,7 @@ class NotificationScreen extends StatelessWidget {
                       gradient: LinearGradient(
                         colors: [
                           notification['color'],
-                          notification['color'].withOpacity(0.7),
+                          notification['color'].withAlpha((0.7 * 255).round()),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(12),

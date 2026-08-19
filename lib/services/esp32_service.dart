@@ -6,8 +6,8 @@ import '../models/pump_status.dart';
 /// ESP32 HTTP Service
 /// Handles all communication with ESP32 fuel pump controller
 class Esp32Service {
-  // Base URL - will be updated from AppState
-  static String baseUrl = '';
+  // Base URL - ESP32 IP address (can be configured via AppState)
+  static String baseUrl = 'http://10.247.47.79';
   
   // HTTP client with timeout
   static final http.Client _client = http.Client();
@@ -39,8 +39,8 @@ class Esp32Service {
     return true;
   }
 
-  /// Check if service is configured
-  static bool get isConfigured => baseUrl.isNotEmpty;
+  /// Check if service is configured - always true since IP is hardcoded in backend
+  static bool get isConfigured => true;
 
   /// Get full URL for endpoint
   static String _url(String endpoint) {
@@ -102,9 +102,24 @@ class Esp32Service {
     return _postRequest('/auto/start');
   }
 
+  /// POST /fuel/select?type=92 - Select fuel type and control servo
+  static Future<Map<String, dynamic>> selectFuelType(String type) async {
+    return _postRequest('/fuel/select?type=$type');
+  }
+
   /// POST /emergency/stop - Emergency stop
   static Future<Map<String, dynamic>> emergencyStop() async {
     return _postRequest('/emergency/stop');
+  }
+
+  /// POST /servo/on - Turn servo ON (0 degrees)
+  static Future<Map<String, dynamic>> servoOn() async {
+    return _postRequest('/servo/on');
+  }
+
+  /// POST /servo/off - Turn servo OFF (180 degrees)
+  static Future<Map<String, dynamic>> servoOff() async {
+    return _postRequest('/servo/off');
   }
 
   /// Generic POST request with retry logic
